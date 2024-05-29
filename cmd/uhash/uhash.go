@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -152,6 +153,62 @@ func fname2size(fname string) int64 {
 	return fi.Size()
 }
 
+var ErrIsDir = errors.New("Path is a directory")
+
+func fname_file(name string) error {
+	fi, err := os.Stat(name)
+	if err != nil {
+		return err
+	}
+
+	if fi.IsDir() {
+		return fmt.Errorf("Open(%s): %w", name, ErrIsDir)
+	}
+
+	return nil
+}
+
+var exit_code = 0
+
+func sum_file(fname, algo string, comments bool) {
+
+	if err := fname_file(fname); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+
+	// Escape the filename, so everything is on one line...
+	name := fname
+	if strings.ContainsAny(name, "\r\n") {
+		name = strings.ReplaceAll(name, "\r", "\\r")
+		name = strings.ReplaceAll(name, "\n", "\\n")
+		name = strings.ReplaceAll(name, "\\", "\\\\")
+	}
+
+	var size int64
+	if comments {
+		size = fname2size(fname)
+		if size > 0 {
+			fmt.Printf("# %s: %d bytes\n", name, size)
+		}
+	}
+	fmt.Printf("%s (%s) = ", algo, name)
+	hash, num, err := uhash.SumFile(algo, fname)
+
+	fmt.Println(hash)
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exit_code = 4
+	}
+
+	if size > 0 && num != size {
+		fmt.Fprintf(os.Stderr, "Mismatched size %d!=%d: %s\n",
+			size, num, fname)
+		exit_code = 4
+	}
+}
+
 // ---------------------------------------------------------------
 
 func main() {
@@ -184,7 +241,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	code := 0
 	for _, arg := range flag.Args() {
 		if *check {
 			pc := parseChecksumFile(arg, *algo)
@@ -212,45 +268,14 @@ func main() {
 						os.Exit(1)
 					}
 					fmt.Println("FAIL")
-					fmt.Println(" O:", len(hash), hash, "|")
-					fmt.Println(" N:", len(chkhash), string(chkhash), "|")
-					fmt.Println(" T1:", chkhash.EqualString(string(chkhash)))
-					fmt.Println(" T2:", string(chkhash) == hash)
 				}
 			}
 			continue
 		}
 
-		name := arg
-		if strings.ContainsAny(name, "\r\n") {
-			name = strings.ReplaceAll(name, "\r", "\\r")
-			name = strings.ReplaceAll(name, "\n", "\\n")
-			name = strings.ReplaceAll(name, "\\", "\\\\")
-		}
-
-		var size int64
-		if *comments {
-			size = fname2size(name)
-		}
-		if *comments && size > 0 {
-			fmt.Printf("# %s: %d bytes\n", name, size)
-
-		}
-		fmt.Printf("%s (%s) = ", *algo, name)
-		hash, num, err := uhash.SumFile(*algo, arg)
-
-		fmt.Println(hash)
-
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-		}
-
-		if size > 0 && num != size {
-			fmt.Fprintf(os.Stderr, "Mismatched size %d!=%d: %s\n",
-				size, num, name)
-			code = 4
-		}
+		// Should be real files or directories...
+		sum_file(arg, *algo, *comments)
 	}
 
-	os.Exit(code)
+	os.Exit(exit_code)
 }
