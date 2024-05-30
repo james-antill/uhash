@@ -227,8 +227,8 @@ func main() {
 		help     = flag.Bool("h", false, "display this message")
 		algo     = flag.String("a", "", `select the digest type to use`)
 		check    = flag.Bool("c", false, `read checksums from the FILEs and check them`)
-		status   = flag.Bool("status", false, `don't output anything, status code shows success`)
-		comments = flag.Bool("comments", false, `output comments, status code shows success`)
+		status   = flag.Bool("status", false, `don't output anything for --check, status code shows success`)
+		comments = flag.Bool("comments", false, `output comments, with sizes`)
 		header   = flag.Bool("header", false, `output Hash: header`)
 	)
 
@@ -247,7 +247,7 @@ func main() {
 		*algo = "SHA256"
 	}
 
-	_, err := uhash.Lookup(*algo)
+	defhash, err := uhash.Lookup(*algo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(err, uhash.ErrNotFound) {
@@ -264,6 +264,9 @@ func main() {
 			// Show available hashes?
 		}
 		os.Exit(99)
+	}
+	if *status { // Do we want to normalize the algo name? Hidden feature.
+		*algo = defhash.Name()
 	}
 
 	if *header && !*check {
