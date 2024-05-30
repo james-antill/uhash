@@ -228,6 +228,7 @@ func main() {
 		check    = flag.Bool("c", false, `read checksums from the FILEs and check them`)
 		status   = flag.Bool("status", false, `don't output anything, status code shows success`)
 		comments = flag.Bool("comments", false, `output comments, status code shows success`)
+		header   = flag.Bool("header", false, `output Hash: header`)
 	)
 
 	flag.BoolVar(help, "help", false, "")
@@ -249,6 +250,10 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
+	}
+	if *header && !*check {
+		fmt.Println("Hash:", *algo)
+		fmt.Println("")
 	}
 
 	for _, arg := range flag.Args() {
