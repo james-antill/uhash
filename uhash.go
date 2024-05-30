@@ -92,7 +92,7 @@ func (k Kind) Name() string {
 		return fmt.Sprintf("%s: %d", kind2hash[0].name, int(k))
 	}
 
-	return kind2hash[k-1].name
+	return kind2hash[k].name
 }
 
 func (k Kind) New() hash.Hash {
