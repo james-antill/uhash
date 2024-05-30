@@ -30,7 +30,17 @@ type parsedChecksumFile struct {
 	hashs []string
 }
 
-func maybeEscapeFname(fname string) string {
+func maybeEscapeFname(name string) string {
+	if strings.ContainsAny(name, "\r\n") { // Slow but easy...
+		name = strings.ReplaceAll(name, "\r", "\\r")
+		name = strings.ReplaceAll(name, "\n", "\\n")
+		name = strings.ReplaceAll(name, "\\", "\\\\")
+	}
+
+	return name
+}
+
+func maybeUnescapeFname(fname string) string {
 	if fname[0] == '\\' { // Slow but easy...
 		// We should also check that there are no other \x things
 		fname = strings.ReplaceAll(fname, "\\n", "\n")
@@ -67,7 +77,7 @@ func parseChecksumFile(fname, defalgo string) parsedChecksumFile {
 			continue
 		}
 
-		// Skip PGPG Stuff...
+		// Skip PGP/GPG within file signatues...
 		if strings.HasPrefix(text, "-----BEGIN ") {
 			if strings.HasSuffix(text, " MESSAGE-----") {
 				continue
@@ -93,12 +103,12 @@ func parseChecksumFile(fname, defalgo string) parsedChecksumFile {
 		text = strings.TrimLeft(text, " \t")
 
 		if text == "" {
-			fmt.Fprintf(os.Stderr, "xBad line %d: %s\n", num, otext)
+			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
 		if text[0] != '(' {
 			// maybe it's just "<checksum> <fname>"
-			fname := maybeEscapeFname(text)
+			fname := maybeUnescapeFname(text)
 			hash := algo
 			res.names = append(res.names, fname)
 			res.kinds = append(res.kinds, defalgo)
@@ -109,7 +119,7 @@ func parseChecksumFile(fname, defalgo string) parsedChecksumFile {
 
 		roff := strings.LastIndexAny(text, " \t")
 		if roff == -1 {
-			fmt.Fprintf(os.Stderr, "yBad line %d: %s\n", num, otext)
+			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
 		hash := text[roff+1:]
@@ -117,19 +127,19 @@ func parseChecksumFile(fname, defalgo string) parsedChecksumFile {
 
 		text = strings.TrimRight(text, " \t")
 		if text[len(text)-1] != '=' {
-			fmt.Fprintf(os.Stderr, "zBad line %d: %s\n", num, otext)
+			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
 		text = text[:len(text)-1]
 
 		text = strings.TrimRight(text, " \t")
 		if text[len(text)-1] != ')' {
-			fmt.Fprintf(os.Stderr, "zBad line %d: %s\n", num, otext)
+			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
 		text = text[:len(text)-1]
 
-		fname = maybeEscapeFname(text)
+		fname = maybeUnescapeFname(text)
 
 		res.names = append(res.names, fname)
 		res.kinds = append(res.kinds, algo)
@@ -154,6 +164,7 @@ func fname2size(fname string) int64 {
 }
 
 var ErrIsDir = errors.New("Path is a directory")
+var ErrIsNotReg = errors.New("Path is not a regular file")
 
 func fname_file(name string) error {
 	fi, err := os.Stat(name)
@@ -163,6 +174,10 @@ func fname_file(name string) error {
 
 	if fi.IsDir() {
 		return fmt.Errorf("Open(%s): %w", name, ErrIsDir)
+	}
+
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("Open(%s): %w", name, ErrIsNotReg)
 	}
 
 	return nil
@@ -177,13 +192,8 @@ func sum_file(fname, algo string, comments bool) {
 		return
 	}
 
-	// Escape the filename, so everything is on one line...
-	name := fname
-	if strings.ContainsAny(name, "\r\n") {
-		name = strings.ReplaceAll(name, "\r", "\\r")
-		name = strings.ReplaceAll(name, "\n", "\\n")
-		name = strings.ReplaceAll(name, "\\", "\\\\")
-	}
+	// So the fname is always on one line...
+	name := maybeEscapeFname(fname)
 
 	var size int64
 	if comments {
@@ -255,7 +265,16 @@ func main() {
 				}
 				chkhash, _, err := uhash.SumFile(kind, bn+"/"+name)
 				if err != nil {
-					fmt.Fprintln(os.Stderr, err)
+					if errors.Is(err, os.ErrNotExist) {
+						fmt.Println("MISSING")
+					} else {
+						fmt.Println("ERROR")
+						fmt.Fprintln(os.Stderr, err)
+					}
+					if exit_code == 0 {
+						// Exit if *status ?
+						exit_code = 8
+					}
 					continue
 				}
 
