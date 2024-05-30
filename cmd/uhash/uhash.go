@@ -210,6 +210,7 @@ func sum_file(fname, algo string, comments bool) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		exit_code = 4
+		return
 	}
 
 	if size > 0 && num != size {
@@ -249,8 +250,22 @@ func main() {
 	_, err := uhash.Lookup(*algo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		if errors.Is(err, uhash.ErrNotFound) {
+			fmt.Fprintln(os.Stderr, "  Available hashes (name: size):")
+
+			var k uhash.Kind = 1
+			for ; !strings.HasPrefix(k.Name(), "Unknown:"); k++ {
+				d := ""
+				if k.Name() == "SHA256" {
+					d = " (default)"
+				}
+				fmt.Fprintf(os.Stderr, "    %s: %d%s\n", k.Name(), k.Size(), d)
+			}
+			// Show available hashes?
+		}
+		os.Exit(99)
 	}
+
 	if *header && !*check {
 		fmt.Println("Hash:", *algo)
 		fmt.Println("")
