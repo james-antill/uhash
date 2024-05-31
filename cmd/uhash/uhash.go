@@ -41,7 +41,7 @@ func maybeEscapeFname(name string) string {
 }
 
 func maybeUnescapeFname(fname string) string {
-	if fname[0] == '\\' { // Slow but easy...
+	if strings.HasPrefix(fname, "\\") { // Slow but easy...
 		// We should also check that there are no other \x things
 		fname = strings.ReplaceAll(fname, "\\n", "\n")
 		fname = strings.ReplaceAll(fname, "\\r", "\r")
@@ -126,14 +126,14 @@ func parseChecksumFile(fname, defalgo string) parsedChecksumFile {
 		text = text[:roff]
 
 		text = strings.TrimRight(text, " \t")
-		if text[len(text)-1] != '=' {
+		if !strings.HasSuffix(text, "=") {
 			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
 		text = text[:len(text)-1]
 
 		text = strings.TrimRight(text, " \t")
-		if text[len(text)-1] != ')' {
+		if !strings.HasSuffix(text, ")") {
 			fmt.Fprintf(os.Stderr, "Bad line %d: %s\n", num, otext)
 			continue
 		}
