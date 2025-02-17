@@ -178,7 +178,10 @@ func New(name string) (Kind, hash.Hash, error) {
 	return k, k.New(), nil
 }
 
-func init() {
+// AddStdHashes adds the std. library hashes when they are registered crypto.*.Available()
+// we can't do this in init, because the hashes are registered via. init() functions
+// and could thus. be registered after we ask if they are registered.
+func AddStdHashes() {
 	// import golang.org/x/crypto/md4
 	if crypto.MD4.Available() {
 		kind, _ := Add("MD4", crypto.MD4)
