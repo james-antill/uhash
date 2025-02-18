@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"hash"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"slices"
@@ -61,7 +62,7 @@ func offNum(a string, i int) int {
 
 	num := 0
 	for ; i < len(a) && a[i] >= '0' && a[i] <= '9'; i++ {
-		num = num*10 + int(a[i] - '0')
+		num = num*10 + int(a[i]-'0')
 	}
 
 	return num
@@ -491,9 +492,26 @@ func fname_file(name string) error {
 
 var exit_code = 0
 
+func sum_dir(fname, algo string, comments bool) {
+	files, err := ioutil.ReadDir(fname)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+
+	for _, df := range files {
+		sum_file(fname+"/"+df.Name(), algo, comments)
+	}
+}
+
 func sum_file(fname, algo string, comments bool) {
 
 	if err := fname_file(fname); err != nil {
+		if errors.Is(err, ErrIsDir) {
+			sum_dir(fname, algo, comments)
+			return
+		}
+
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
