@@ -5,8 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/james-antill/uhash"
@@ -22,7 +24,311 @@ import (
 	_ "golang.org/x/crypto/md4"
 	_ "golang.org/x/crypto/ripemd160"
 	_ "golang.org/x/crypto/sha3"
+
+	// Std. hashes that aren't crypto
+	"hash/adler32"
+	"hash/crc32"
+	"hash/crc64"
+	"hash/fnv"
+
+	// Now add some custom ones, adding the init stuff else where so people can
+	// just import would be great.
+
+	// Maybe official upstream version?
+	// "lukechampine.com/blake3"
+	// Fast with AVX2 and SSE4.1 acceleration
+	"github.com/zeebo/blake3"
+
+	"github.com/cespare/xxhash"
+
+	// djb2/djb2a/sdbm
+	"github.com/dgryski/dgohash"
+
+	// github.com/spaolacci/murmur3 is more popular, but twmb seemed to have
+	// more testing and amd64 asm.
+	"github.com/twmb/murmur3"
 )
+
+// Turn an offset into a number, or -1 is it's not a number
+func offNum(a string, i int) int {
+	if i >= len(a) {
+		return -1
+	}
+
+	if !(a[i] >= '0' && a[i] <= '9') {
+		return -1
+	}
+
+	num := 0
+	for ; i < len(a) && a[i] >= '0' && a[i] <= '9'; i++ {
+		num = num*10 + int(a[i] - '0')
+	}
+
+	return num
+
+}
+
+func uiSort(a, b string) int {
+	a = strings.ToLower(a)
+	b = strings.ToLower(b)
+
+	for i := range a {
+		if i >= len(b) {
+			return strings.Compare(a, b)
+		}
+		if a[i] == b[i] {
+			continue
+		}
+
+		an := offNum(a, i)
+		bn := offNum(b, i)
+
+		if an < bn {
+			return -1
+		}
+		return 1
+	}
+
+	return strings.Compare(a, b)
+}
+
+type lhCSadler32 int
+
+func (u lhCSadler32) New() hash.Hash {
+	return adler32.New()
+}
+
+func (u lhCSadler32) Size() int {
+	return 4
+}
+
+type lhCScrc32 int
+
+func (u lhCScrc32) New() hash.Hash {
+	return crc32.NewIEEE()
+}
+
+func (u lhCScrc32) Size() int {
+	return 4
+}
+
+var pCastagnoli = crc32.MakeTable(crc32.Castagnoli)
+
+type lhCScrc32Castagnoli int
+
+func (u lhCScrc32Castagnoli) New() hash.Hash {
+	return crc32.New(pCastagnoli)
+}
+
+func (u lhCScrc32Castagnoli) Size() int {
+	return 4
+}
+
+var pKoopman = crc32.MakeTable(crc32.Koopman)
+
+type lhCScrc32Koopman int
+
+func (u lhCScrc32Koopman) New() hash.Hash {
+	return crc32.New(pKoopman)
+}
+
+func (u lhCScrc32Koopman) Size() int {
+	return 4
+}
+
+var pISO = crc64.MakeTable(crc64.ISO)
+
+type lhCScrc64ISO int
+
+func (u lhCScrc64ISO) New() hash.Hash {
+	return crc64.New(pISO)
+}
+
+func (u lhCScrc64ISO) Size() int {
+	return 8
+}
+
+var pECMA = crc64.MakeTable(crc64.ECMA)
+
+type lhCScrc64ECMA int
+
+func (u lhCScrc64ECMA) New() hash.Hash {
+	return crc64.New(pECMA)
+}
+
+func (u lhCScrc64ECMA) Size() int {
+	return 8
+}
+
+type lhCSfnv32 int
+
+func (u lhCSfnv32) New() hash.Hash {
+	return fnv.New32()
+}
+
+func (u lhCSfnv32) Size() int {
+	return 4
+}
+
+type lhCSfnv32a int
+
+func (u lhCSfnv32a) New() hash.Hash {
+	return fnv.New32a()
+}
+
+func (u lhCSfnv32a) Size() int {
+	return 4
+}
+
+type lhCSfnv64 int
+
+func (u lhCSfnv64) New() hash.Hash {
+	return fnv.New64()
+}
+
+func (u lhCSfnv64) Size() int {
+	return 8
+}
+
+type lhCSfnv64a int
+
+func (u lhCSfnv64a) New() hash.Hash {
+	return fnv.New64a()
+}
+
+func (u lhCSfnv64a) Size() int {
+	return 8
+}
+
+type lhCSfnv128 int
+
+func (u lhCSfnv128) New() hash.Hash {
+	return fnv.New128()
+}
+
+func (u lhCSfnv128) Size() int {
+	return 16
+}
+
+type lhCSfnv128a int
+
+func (u lhCSfnv128a) New() hash.Hash {
+	return fnv.New128a()
+}
+
+func (u lhCSfnv128a) Size() int {
+	return 16
+}
+
+// Hashes outside the std. lib (x/ counts as std.)
+type lhCSblake3256 int
+
+func (u lhCSblake3256) New() hash.Hash {
+	return blake3.New()
+}
+func (u lhCSblake3256) Size() int {
+	return 32
+}
+
+type lhCSxxHash int
+
+func (u lhCSxxHash) New() hash.Hash {
+	return xxhash.New()
+}
+
+func (u lhCSxxHash) Size() int {
+	return 8
+}
+
+type lhCSdjb2 int
+
+func (u lhCSdjb2) New() hash.Hash {
+	return dgohash.NewDjb32()
+}
+func (u lhCSdjb2) Size() int {
+	return 4
+}
+
+type lhCSdjb2a int
+
+func (u lhCSdjb2a) New() hash.Hash {
+	return dgohash.NewDjb32a()
+}
+func (u lhCSdjb2a) Size() int {
+	return 4
+}
+
+type lhCSsdbm int
+
+func (u lhCSsdbm) New() hash.Hash {
+	return dgohash.NewSDBM32()
+}
+func (u lhCSsdbm) Size() int {
+	return 4
+}
+
+type lhCSmurmur32 int
+
+func (u lhCSmurmur32) New() hash.Hash {
+	return murmur3.New32()
+}
+func (u lhCSmurmur32) Size() int {
+	return 4
+}
+
+type lhCSmurmur64 int
+
+func (u lhCSmurmur64) New() hash.Hash {
+	return murmur3.New64()
+}
+func (u lhCSmurmur64) Size() int {
+	return 8
+}
+
+type lhCSmurmur128 int
+
+func (u lhCSmurmur128) New() hash.Hash {
+	return murmur3.New128()
+}
+func (u lhCSmurmur128) Size() int {
+	return 16
+}
+
+func init() {
+	uhash.Add("adler32", lhCSadler32(0))
+	kind, _ := uhash.Add("crc32", lhCScrc32(0))
+	kind.AddAlias("crc32-IEEE")
+	uhash.Add("crc32-Castagnoli", lhCScrc32Castagnoli(0))
+	uhash.Add("crc32-Koopman", lhCScrc32Koopman(0))
+	uhash.Add("crc64-ISO", lhCScrc64ISO(0))
+	uhash.Add("crc64-ECMA", lhCScrc64ECMA(0))
+	uhash.Add("fnv32", lhCSfnv32(0))
+	uhash.Add("fnv32a", lhCSfnv32a(0))
+	uhash.Add("fnv64", lhCSfnv64(0))
+	uhash.Add("fnv64a", lhCSfnv64a(0))
+	uhash.Add("fnv128", lhCSfnv128(0))
+	uhash.Add("fnv128a", lhCSfnv128a(0))
+
+	kind, _ = uhash.Add("BLAKE3-256", lhCSblake3256(0))
+	kind.AddAlias("blake3-256")
+	kind.AddAlias("BLAKE3")
+	kind.AddAlias("blake3")
+
+	uhash.Add("xxh64", lhCSxxHash(0))
+
+	uhash.Add("djb2", lhCSdjb2(0))
+
+	uhash.Add("djb2a", lhCSdjb2a(0))
+
+	uhash.Add("sdbm", lhCSsdbm(0))
+
+	kind, _ = uhash.Add("murmur3-32", lhCSmurmur32(0))
+	kind.AddAlias("murmur3")
+
+	uhash.Add("murmur3-64", lhCSmurmur64(0))
+
+	uhash.Add("murmur3-128", lhCSmurmur128(0))
+}
 
 type parsedChecksumFile struct {
 	names []string
@@ -223,6 +529,8 @@ func sum_file(fname, algo string, comments bool) {
 // ---------------------------------------------------------------
 
 func main() {
+	uhash.AddStdHashes()
+
 	var (
 		help     = flag.Bool("h", false, "display this message")
 		algo     = flag.String("a", "", `select the digest type to use`)
@@ -253,8 +561,17 @@ func main() {
 		if errors.Is(err, uhash.ErrNotFound) {
 			fmt.Fprintln(os.Stderr, "  Available hashes (name: size):")
 
+			var ks []uhash.Kind
 			var k uhash.Kind = 1
 			for ; !strings.HasPrefix(k.Name(), "Unknown:"); k++ {
+				ks = append(ks, k)
+			}
+
+			slices.SortFunc(ks, func(a, b uhash.Kind) int {
+				return uiSort(a.Name(), b.Name())
+			})
+
+			for _, k := range ks {
 				d := ""
 				if k.Name() == "SHA256" {
 					d = " (default)"
